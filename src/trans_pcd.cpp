@@ -174,6 +174,8 @@ void match_files() {
       std::string s_pose_time =
           PoseQue[j].dr_time_sec + PoseQue[j].dr_time_nsec;
       long l_pose_time = std::stol(s_pose_time);
+      // std::cout << "l_pcl_time          " << l_pcl_time << std::endl; 
+      // std::cout << "l_pose_time         " << l_pose_time << std::endl; 
       long dis = std::abs(l_pcl_time - l_pose_time);
 
       //            dr:  1695780588.944840908
@@ -216,6 +218,27 @@ void match_files() {
   return;
 }
 
+
+// 保存PclQue和matched_PoseQue
+void save_que_to_file() {
+  std::string que_file_path = "/media/pw/data/cjy_data/09271010/matched_files.txt";
+  std::ofstream results;
+  results.open(que_file_path);  //, std::ios::out | std::ios::app);
+  if(PclQue.size() != matched_PoseQue.size()) {
+    std::cout << "------------file match failed------------" << std::endl;
+  }
+  else {
+    results << PclQue.size() << "\n\n";
+    for(int i = 0; i < PclQue.size(); i++) {
+      results << i << "\n";
+      results << PclQue[i].pcd_name << "\n";
+      results << matched_PoseQue[i].dr_name << "\n\n";
+      // std::cout << "------------file match saved------------" << std::endl;
+    }
+    results.close();
+  }
+  return;
+}
 // 计算dr间的变换矩阵
 Eigen::Matrix4d calculate_trans_dr(getdata::get_DR::PoseData fixed_pose_,
                                    getdata::get_DR::PoseData p_,
@@ -383,13 +406,10 @@ int main(int argc, char **argv) {
   first_time_match(g_dr, g_pcd);
   last_time_match(g_dr, g_pcd);
   match_files();
+  save_que_to_file();
 
   // test_calcu_R();
 
-  if(matched_PoseQue.size() != PclQue.size()) {
-    std::cout << "not match!!!!!!!!!!!!!!!!!!!!" << std::endl;
-    return 0;
-  }
   getdata::get_DR::PoseData fixed_pose = matched_PoseQue.front();
   fixed_pose.dr_quaternion.normalize();
   std::cout << "fixed Q: (" << fixed_pose.dr_quaternion.w() << ", " <<
@@ -399,38 +419,48 @@ int main(int argc, char **argv) {
   pcl::PointCloud<pcl::PointXYZI>::Ptr fixed_cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
   pcl::io::loadPCDFile<pcl::PointXYZI>(PclQue.front().pcd_path, *fixed_cloud);
-  std::cout << "loaded fixed cloud" << std::endl;
+  std::cout << "------------loaded fixed cloud------------" << std::endl;
 
   int add_num = 0;
   pcl::PointCloud<pcl::PointXYZI>::Ptr add_pcd(new pcl::PointCloud<pcl::PointXYZI>);
+  double last_t = 0;
+  pcl::PointCloud<pcl::PointXYZI>::Ptr pre_trans_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PointCloud<pcl::PointXYZI>::Ptr aft_trans_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+
   for (int i = 0; i < matched_PoseQue.size(); i++) {
     Eigen::Matrix4d trans_dr = Eigen::Matrix4d::Identity();
     trans_dr = calculate_trans_dr(fixed_pose, matched_PoseQue[i], trans_dr);
-    // 5米之内
-    if(trans_dr(0, 3) > 3 || add_num > 100) {
+    double t_x = trans_dr(0, 3);
+    double t_y = trans_dr(1, 3);
+    // double trans_t = std::sqrt((t_x * t_x) + (t_y * t_y));
+    double trans_t = std::sqrt(std::pow(t_x, 2) + std::pow(t_y, 2));
+    double dis_t  = trans_t - last_t;
+    // 0.05米拼一次
+    if(dis_t < 0.05) {
+      continue;
+    }
+    // 10米之内
+    if(trans_t > 20) {
       break;
     }
+    last_t = trans_t;
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr pre_trans_cloud(
-        new pcl::PointCloud<pcl::PointXYZI>);
     pcl::io::loadPCDFile<pcl::PointXYZI>(PclQue[i].pcd_path, *pre_trans_cloud);
-    std::cout << "loaded pre cloud" << std::endl;
-
-    pcl::PointCloud<pcl::PointXYZI>::Ptr aft_trans_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    std::cout << "------------loaded pre cloud------------" << std::endl;
 
     pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud, trans_dr);  // pre --tran--> aft
-    std::cout << "transed cloud" << std::endl;
+    std::cout << "------------transed cloud------------" << std::endl;
     // pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/after_trans.pcd" + i, *aft_trans_cloud);
     // std::cout << "saved transed cloud" << std::endl;
 
-
-    // *add_pcd += *fixed_cloud;
-    // *add_pcd += *aft_trans_cloud;
+    *add_pcd += *fixed_cloud;
+    *add_pcd += *aft_trans_cloud;
     add_num++;
     std::cout << "add num      " << add_num << std::endl;
     // pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/add_pcd.pcd", *add_pcd);
   }
-  // pcl::io::savePCDFileASCII("/media/pw/data/cjy_data/res/add_pcd.pcd", *add_pcd);
+  // pcl::io::savePCDFileASCII("/media/pw/data/cjy_data/09271010/res/add_pcd.pcd", *add_pcd);
+  std::cout << "------------finish all------------" << std::endl;
 
   return 0;
 }

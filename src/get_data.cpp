@@ -65,6 +65,9 @@ getdata::get_DR::PoseData get_DR::readOneDRFromJson(
   if (reader.parse(in, root)) {
     data.dr_time_sec = root["header"]["stamp"]["sec"].asString();
     data.dr_time_nsec = root["header"]["stamp"]["nsec"].asString();
+    if (data.dr_time_nsec.size() < 9) {
+      data.dr_time_nsec = "0" + data.dr_time_nsec;
+    }
     // std::cout << "dr dr_time_sec   " << data.dr_time_sec << std::endl;
     // std::cout << "dr dr_time_nsec   " << data.dr_time_nsec << std::endl;
 
@@ -127,7 +130,8 @@ getdata::get_PCD::PcdData get_PCD::readOnePcd(std::deque<std::string> PCDQue_) {
     count++;
     if (count == 2) {
       data.pcd_time_sec = token;
-
+      data.pcd_name = token;
+      // std::cout << "pcd_name:    " << data.pcd_name << std::endl;
       while ((pos = name.find(dotttt)) !=
              std::string::npos) {  // 先根据"."查找到nsec_time
         token = name.substr(0, pos);
@@ -135,6 +139,10 @@ getdata::get_PCD::PcdData get_PCD::readOnePcd(std::deque<std::string> PCDQue_) {
         // std::cout << "Extracted Number " << count << ": " << token <<
         // std::endl;
         data.pcd_time_nsec = token;
+        data.pcd_name += ".";
+        data.pcd_name += token;
+        data.pcd_name += ".pcd";
+        // std::cout << "pcd_name:    " << data.pcd_name << std::endl;
       }
     }
   }
