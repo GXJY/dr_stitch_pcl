@@ -25,6 +25,7 @@ std::deque<getdata::get_DR::PoseData> PoseQue;  // 所有从json中读到的dr_p
 std::deque<getdata::get_DR::PoseData>
     matched_PoseQue;  // 以pcd时间为参照，匹配到时间最近的dr_pose
 getdata::get_DR::PoseData fixed_pose;
+getdata::get_DR::PoseData last_pose;
 pcl::PointCloud<pcl::PointXYZI>::Ptr fixed_cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
 
@@ -257,35 +258,33 @@ bool save_que_to_file() {
   return true;
 }
 
-// 计算dr间的变换矩阵
-Eigen::Matrix4d calculate_trans_dr(getdata::get_DR::PoseData fixed_pose_,
-                                   getdata::get_DR::PoseData p_,
-                                   Eigen::Matrix4d &trans_dr_) {
+// 计算dr间的变换矩阵   n-->p
+Eigen::Matrix4d calculate_pTn(getdata::get_DR::PoseData pre_pose_,
+                                   getdata::get_DR::PoseData now_pose_,
+                                   Eigen::Matrix4d &trans_pTn_) {
   // std::cout << "------------start claculate T------------" << std::endl;
-  std::cout << "p_dr_name     " << p_.dr_name << std::endl;
-  getdata::get_DR::PoseData pre_trans = p_;
+  std::cout << "now_pose_dr_name     " << now_pose_.dr_name << std::endl;
 
   // std::cout << "------------claculate t------------" << std::endl;
-  Eigen::Vector3d t_dr = p_.dr_pose - fixed_pose_.dr_pose;
-  // std::cout << "T t  " << std::endl << t_dr << std::endl;
+  Eigen::Vector3d ptn = pre_pose_.dr_pose - now_pose_.dr_pose;
+  std::cout << "T t  " << std::endl << ptn << std::endl;
 
   // std::cout << "------------claculate R by Q------------" << std::endl;
-  p_.dr_quaternion.normalize();
+  now_pose_.dr_quaternion.normalize();
 
-  Eigen::Matrix3d R_p_fixed_Q =
-      p_.dr_quaternion.toRotationMatrix() *
-      fixed_pose_.dr_quaternion.conjugate().toRotationMatrix();
-  // std::cout << "R_p_fixed_Q  " << std::endl << R_p_fixed_Q << std::endl;
+  Eigen::Matrix3d pRn = pre_pose_.dr_quaternion.conjugate().toRotationMatrix() * now_pose_.dr_quaternion.toRotationMatrix();
+  // std::cout << "pRn  " << std::endl << pRn << std::endl;
 
-  // std::cout << "T R_Q  " << std::endl << R_p_fixed_Q << std::endl;
-  // rotation2rpy(R_p_fixed_Q);
+  std::cout << "T R  " << std::endl << pRn << std::endl;
+  // rotation2rpy(pRn);
 
-  trans_dr_.block<3, 3>(0, 0) = R_p_fixed_Q;
-  trans_dr_.block<3, 1>(0, 3) = t_dr;
-  // std::cout << "trans T  " << std::endl << trans_dr_ << std::endl;
+  trans_pTn_.block<3, 3>(0, 0) = pRn;
+  trans_pTn_.block<3, 1>(0, 3) = ptn;
+  
+  std::cout << "trans T  " << std::endl << trans_pTn_ << std::endl;
 
   std::cout << "------------finish claculate T------------" << std::endl;
-  return trans_dr_;
+  return trans_pTn_;
 }
 
 void test_calcu_R() {
@@ -347,9 +346,9 @@ void test_calcu_R() {
 
   // load pcd
   std::string pcd_name1 =
-      "/media/pw/data/cjy_data/09271010/rs_pcd/RS128_1695780589_044048128.pcd";
+      "/media/pw/data/cjy_data/09271017/rs_pcd/RS128_1695780589_044048128.pcd";
   std::string pcd_name2 =
-      "/media/pw/data/cjy_data/09271010/rs_pcd/RS128_1695780629_944593152.pcd";
+      "/media/pw/data/cjy_data/09271017/rs_pcd/RS128_1695780629_944593152.pcd";
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr pcd1(
       new pcl::PointCloud<pcl::PointXYZI>);
@@ -405,32 +404,35 @@ void trans_L2f() {
   int add_num = 0;
   pcl::PointCloud<pcl::PointXYZI>::Ptr add_pcd(
       new pcl::PointCloud<pcl::PointXYZI>);
-  double last_t = 0;
+  *add_pcd += *fixed_cloud;
+
   pcl::PointCloud<pcl::PointXYZI>::Ptr pre_trans_cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
   pcl::PointCloud<pcl::PointXYZI>::Ptr aft_trans_cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
 
-  double dis_thred = 0.1; // 相邻两帧点云间隔距离
+  double dis_thred = 0.2; // 相邻两帧点云间隔距离
   double trans_thred = 2; // 收尾两帧点云间隔距离
 
-  for (int i = 0; i < matched_PoseQue.size(); i++) {
-    Eigen::Matrix4d trans_dr = Eigen::Matrix4d::Identity();
-    trans_dr = calculate_trans_dr(fixed_pose, matched_PoseQue[i], trans_dr);
-    double t_x = trans_dr(0, 3);
-    double t_y = trans_dr(1, 3);
-    // double trans_t = std::sqrt((t_x * t_x) + (t_y * t_y));
-    double trans_t = std::sqrt(std::pow(t_x, 2) + std::pow(t_y, 2));
-    double dis_t = trans_t - last_t;
-    // 0.05米拼一次
-    if (dis_t < dis_thred) {
+  Eigen::Matrix4d trans_fTn = Eigen::Matrix4d::Identity();  // 当前帧-->fixed 增量式
+  Eigen::Matrix4d trans_lTn = Eigen::Matrix4d::Identity();  // 当前帧-->上一帧
+  double f_tdiss_n = 0;  // 当前帧-->fixed 位移
+  double l_tdiss_n = 0;  //当前帧-->上一帧 位移
+  last_pose = fixed_pose;
+
+  for (int i = 1; i < matched_PoseQue.size(); i++) { // 跳过计算第一帧固定帧
+    trans_lTn = calculate_pTn(last_pose, matched_PoseQue[i], trans_lTn);
+    double t_x = trans_lTn(0, 3);
+    double t_y = trans_lTn(1, 3);
+    double l_tdiss_n = std::sqrt(std::pow(t_x, 2) + std::pow(t_y, 2));
+
+    if (l_tdiss_n < dis_thred) {
       continue;
     }
-    // 10米之内
-    if (trans_t > trans_thred) {
-      break;
-    }
-    last_t = trans_t;
+
+    f_tdiss_n += l_tdiss_n;
+    trans_fTn *= trans_lTn;
+    last_pose = matched_PoseQue[i];
 
     long dis_time_sec = std::stol(matched_PoseQue[i].dr_time_sec) -
                         std::stol(fixed_pose.dr_time_sec);
@@ -443,50 +445,98 @@ void trans_L2f() {
     std::cout << "------------loaded pre cloud------------" << std::endl;
 
     pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud,
-                             trans_dr);  // pre --tran--> aft
+                             trans_fTn);  // pre --tran--> aft
+    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/09271017/res/transed" + PclQue[i].pcd_name, *aft_trans_cloud);
+
     std::cout << "------------transed cloud------------" << std::endl;
     // pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/after_trans.pcd" + i,
     // *aft_trans_cloud); std::cout << "saved transed cloud" << std::endl;
 
-    *add_pcd += *fixed_cloud;
     *add_pcd += *aft_trans_cloud;
     add_num++;
     std::cout << "add num      " << add_num << std::endl;
-    // pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/add_pcd.pcd",
-    // *add_pcd);
+
+    if (f_tdiss_n > trans_thred) {
+      break;
+    }
   }
   std::cout << "------------start save final pcd------------" << std::endl;
-  pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/09271017/res/add_pcd.pcd",
-  *add_pcd);
+  pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/09271017/res/add_pcd.pcd", *add_pcd);
 }
 
+void trans_pcd_L_T_I(Eigen::Matrix4f I_T_L_) {
+  std::cout << PclQue.size() << std::endl;
+  while(!PclQue.empty()) {
+    pcl::PointCloud<pcl::PointXYZI>::Ptr pre_trans_cloud(
+      new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr aft_trans_cloud(
+      new pcl::PointCloud<pcl::PointXYZI>);
+
+    pcl::io::loadPCDFile<pcl::PointXYZI>(PclQue.front().pcd_path, *pre_trans_cloud);
+    pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud,
+                             I_T_L_.inverse());  // pre --tran--> aft
+    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/lio/1130/output/output_pcd/aft" + PclQue.front().pcd_name, *aft_trans_cloud);
+    std::cout << "finish         " << std::endl;
+    PclQue.pop_front();
+
+  }
+  
+  
+  return;
+}
 
 int main(int argc, char **argv) {
   std::string dr_path = "/media/pw/data1/cjy_data/09271017/dr_json";
-  std::string pcd_path = "/media/pw/data1/cjy_data/09271017/rs_pcd";
+  // std::string pcd_path = "/media/pw/data1/cjy_data/09271017/filtered_pcd";
 
-  // std::string dr_path = "/home/pw/cjy_home/data/drpose";
-  // std::string pcd_path = "/home/pw/cjy_home/data/pcd";
+  // // std::string dr_path = "/home/pw/cjy_home/data/drpose";
+  // // std::string pcd_path = "/home/pw/cjy_home/data/pcd";
+  // getdata::get_files g_files;
+  // g_files.setfilepath(dr_path, pcd_path);
+  // g_files.readDRJsonPaths(DRJsonQue);
+  // g_files.readPCDPaths(PCDQue);
+  // std::cout << "------------all files readed------------" << std::endl;
+
+  // getdata::get_DR g_dr;
+  // getdata::get_PCD g_pcd;
+
+  // // std::cout << "DRJsonQue.empty       "  << DRJsonQue.empty() << std::endl;
+  // while (!DRJsonQue.empty()) {
+  //   getdata::get_DR::PoseData one_pose;
+  //   one_pose = g_dr.readOneDRFromJson(DRJsonQue);
+  //   PoseQue.push_back(one_pose);
+  //   if (one_pose.one_pose_readed) {
+  //     DRJsonQue.pop_front();
+  //   }
+  // }
+
+  // // std::cout << "PCDQue.empty       "  << PCDQue.empty() << std::endl;
+  // while (!PCDQue.empty()) {
+  //   getdata::get_PCD::PcdData one_pcd;
+  //   one_pcd = g_pcd.readOnePcd(PCDQue);
+  //   PclQue.push_back(one_pcd);
+  //   if (one_pcd.one_pcd_readed) {
+  //     PCDQue.pop_front();
+  //   }
+  // }
+
+  // first_time_match(g_dr, g_pcd);
+  // last_time_match(g_dr, g_pcd);
+  // std::cout << "PclQue.size()            " << PclQue.size() << std::endl;
+  // std::cout << "matched_PoseQue.size()   " << matched_PoseQue.size() << std::endl;
+  // match_files();
+  // if(save_que_to_file()) {
+  // // test_calcu_R();
+  // get_fixed();
+  // trans_L2f();
+  // }
+
+  std::string pcd_path = "/media/pw/data1/cjy_data/lio/1130/output/output_pcd";
   getdata::get_files g_files;
   g_files.setfilepath(dr_path, pcd_path);
-  g_files.readDRJsonPaths(DRJsonQue);
   g_files.readPCDPaths(PCDQue);
-  std::cout << "------------all files readed------------" << std::endl;
-
-  getdata::get_DR g_dr;
+  
   getdata::get_PCD g_pcd;
-
-  // std::cout << "DRJsonQue.empty       "  << DRJsonQue.empty() << std::endl;
-  while (!DRJsonQue.empty()) {
-    getdata::get_DR::PoseData one_pose;
-    one_pose = g_dr.readOneDRFromJson(DRJsonQue);
-    PoseQue.push_back(one_pose);
-    if (one_pose.one_pose_readed) {
-      DRJsonQue.pop_front();
-    }
-  }
-
-  // std::cout << "PCDQue.empty       "  << PCDQue.empty() << std::endl;
   while (!PCDQue.empty()) {
     getdata::get_PCD::PcdData one_pcd;
     one_pcd = g_pcd.readOnePcd(PCDQue);
@@ -496,16 +546,15 @@ int main(int argc, char **argv) {
     }
   }
 
-  first_time_match(g_dr, g_pcd);
-  last_time_match(g_dr, g_pcd);
-  std::cout << "PclQue.size()            " << PclQue.size() << std::endl;
-  std::cout << "matched_PoseQue.size()   " << matched_PoseQue.size() << std::endl;
-  match_files();
-  if(save_que_to_file()) {
-  // test_calcu_R();
-  get_fixed();
-  trans_L2f();
-  }
+  Eigen::Matrix4f I_T_L = Eigen::Matrix4f::Identity();
+  I_T_L <<1, 0, 0, -1.810,
+          0, 1, 0, 0,
+          0, 0, 1, -0.043,
+          0, 0, 0, 1;
+
+  trans_pcd_L_T_I(I_T_L);
+  
+  
   
   std::cout << "------------finish all------------" << std::endl;
 
