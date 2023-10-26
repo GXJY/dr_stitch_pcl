@@ -18,39 +18,26 @@
 
 #include "get_data.hpp"
 
-std::deque<std::string> PCDQue;         // 文件夹下所有PCD
-std::deque<std::string> DRJsonQue;      // 文件夹下所有dr_json
-std::deque<std::string> IMUJsonQue;     // 文件夹下所有imu_json
-std::deque<std::string> WHEELJsonQue;   // 文件夹下所有wheel_json
-
-
-std::deque<getdata::get_PCD::PcdData> PclQue;                 // 所有包含时间、路径、文件名的PCDdata
-std::deque<getdata::get_DR::PoseData> PoseQue;                // 所有从json中读到的dr_pose
-std::deque<getdata::get_DR::PoseData> matched_PoseQue;        // 以pcd时间为参照，匹配到时间最近的dr_pose
-std::deque<getdata::get_IMU::ImuData> ImuQue;                 // 所有从json中读到的imu
-std::deque<getdata::get_WHEEL::WheelData> WheelQue;           // 所有从json中读到的wheel
-
-
+std::deque<std::string> PCDQue;     // 文件夹下所有PCD
+std::deque<std::string> DRJsonQue;  // 文件夹下所有dr_json
+std::deque<getdata::get_PCD::PcdData> PclQue;  // 所有包含时间、路径、文件名的PCDdata
+std::deque<getdata::get_DR::PoseData> PoseQue;  // 所有从json中读到的dr_pose
+std::deque<getdata::get_DR::PoseData>
+    matched_PoseQue;  // 以pcd时间为参照，匹配到时间最近的dr_pose
 getdata::get_DR::PoseData fixed_pose;
 getdata::get_DR::PoseData last_pose;
 pcl::PointCloud<pcl::PointXYZI>::Ptr fixed_cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
 
 void rotation2rpy(Eigen::Matrix3d &rotation_) {
-  Eigen::Vector3d rpy_angles = rotation_.eulerAngles(2, 1, 0);  //xyz-前左上 常规普通rpy顺序012；  xyz-上左前 210
-  float roll_degrees = rpy_angles(2) * 180.0 / M_PI;            //xyz-前上左 rs雷达 ryp 021；     xyz-左上前  车体  pyr120
-  float pitch_degrees = rpy_angles(0) * 180.0 / M_PI;
-  float yaw_degrees = rpy_angles(1) * 180.0 / M_PI;
-  float roll_rad = rpy_angles(2);
-  float pitch_rad = rpy_angles(0);
-  float yaw_rad = rpy_angles(1);
-  std::cout << "roll_degrees:    " << roll_degrees << "    degree" << std::endl;
-  std::cout << "pitch_degrees:   " << pitch_degrees << "   degree" << std::endl;
-  std::cout << "yaw_degrees:     " << yaw_degrees << "     degree\n" << std::endl;
-  std::cout << "roll_rad:        " << roll_rad << "        rad" << std::endl;
-  std::cout << "pitch_rad:       " << pitch_rad << "       rad" << std::endl;
-  std::cout << "yaw_rad:         " << yaw_rad << "         rad\n" << std::endl;
-
+  Eigen::Vector3d rpy_angles = rotation_.eulerAngles(2, 1, 0);
+  float roll_degrees = rpy_angles(2) * 180.0 / M_PI;
+  float pitch_degrees = rpy_angles(1) * 180.0 / M_PI;
+  float yaw_degrees = rpy_angles(0) * 180.0 / M_PI;
+  std::cout << "rotation_" << std::endl;
+  std::cout << "Roll (X-axis): " << roll_degrees << " degrees" << std::endl;
+  std::cout << "Pitch (Y-axis): " << pitch_degrees << " degrees" << std::endl;
+  std::cout << "Yaw (Z-axis): " << yaw_degrees << " degrees" << std::endl;
   return;
 }
 
@@ -254,7 +241,7 @@ bool save_que_to_file() {
     return false;
   } else   {
     std::string que_file_path =
-        "/media/pw/data1/cjy_data/10193954/matched_files.txt";
+        "/media/pw/data1/cjy_data/09271017/matched_files.txt";
     std::ofstream results;
     results.open(que_file_path);  //, std::ios::out | std::ios::app);
     results << PclQue.size() << "\n";
@@ -270,40 +257,6 @@ bool save_que_to_file() {
   std::cout << "------------file match saved------------" << std::endl;
   return true;
 }
-
-// void read_one_pcl_from_file(
-//     std::shared_ptr<getData::DataOP> &data_loader,  // NOLINT
-//     int mode) {
-//   mtx_buffer.lock();
-//   scan_count++;
-//   double preprocess_start_time = omp_get_wtime();
-  
-//   if (p_pre->lidar_type == RS128) {
-//     getData::PointCloudRS128 cloud;
-//     cloud = data_loader->readRS128Cloud();
-//     if (cloud.points.size() != 0) {
-//       PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
-//       p_pre->process(cloud, ptr);
-//       cloud.header.stamp =
-//           p_pre->rs128_pointcloud_timestamp * 1e9;  // unit nanosecond
-//       lidar_buffer.push_back(ptr);
-//       double timestamp = p_pre->rs128_pointcloud_timestamp;  // unit second
-//       if (timestamp < last_timestamp_lidar) {
-//         LOG(WARNING) << "lidar loop back, clear buffer";
-//         lidar_buffer.clear();
-//       }
-//       // ROS_INFO("get a lidar data");
-//       time_buffer.push_back(timestamp);
-//       last_timestamp_lidar = timestamp;
-//     }
-//   } 
-// }
-
-// void undistor() {
-  
-//   return;
-// }
-
 
 // 计算dr间的变换矩阵   n-->p
 Eigen::Matrix4d calculate_pTn(getdata::get_DR::PoseData pre_pose_,
@@ -334,6 +287,105 @@ Eigen::Matrix4d calculate_pTn(getdata::get_DR::PoseData pre_pose_,
   return trans_pTn_;
 }
 
+void test_calcu_R() {
+  //       1695780589.016092777.json        1695780629.995780468.json
+  // RS128_1695780589_044048128.pcd   RS128_1695780629_944593152.pcd
+
+  // cal R
+  Eigen::Quaterniond quaternion1(0.9978914856910706, 0.0, 0.0,
+                                 0.0649048388004303);
+  Eigen::Quaterniond quaternion2(0.9984201788902283, 0.0, 0.0,
+                                 0.0561889186501503);
+  quaternion1.normalize();
+  quaternion2.normalize();
+  Eigen::Matrix3d Q_rotation_matrix =
+      quaternion2.toRotationMatrix() *
+      quaternion1.conjugate().toRotationMatrix();
+  std::cout << "Q_rotation_matrix  " << std::endl
+            << Q_rotation_matrix << std::endl;
+  rotation2rpy(Q_rotation_matrix);
+
+  Eigen::Vector3d euler_angles1(0.6499999761581421, -0.029999999329447746,
+                                7.443326950073242);
+  Eigen::Vector3d euler_angles2(1.1799999475479126, 0.14000000059604645,
+                                6.442643165588379);
+
+  Eigen::Matrix3d rotation_matrix1;
+  rotation_matrix1 =
+      Eigen::AngleAxisd(euler_angles1[0], Eigen::Vector3d::UnitX()) *
+      Eigen::AngleAxisd(euler_angles1[1], Eigen::Vector3d::UnitY()) *
+      Eigen::AngleAxisd(euler_angles1[2], Eigen::Vector3d::UnitZ());
+
+  Eigen::Matrix3d rotation_matrix2;
+  rotation_matrix2 =
+      Eigen::AngleAxisd(euler_angles2[0], Eigen::Vector3d::UnitX()) *
+      Eigen::AngleAxisd(euler_angles2[1], Eigen::Vector3d::UnitY()) *
+      Eigen::AngleAxisd(euler_angles2[2], Eigen::Vector3d::UnitZ());
+
+  Eigen::Matrix3d E_rotation_matrix =
+      rotation_matrix2 * rotation_matrix1.transpose();
+  std::cout << "E_rotation_matrix  " << std::endl
+            << E_rotation_matrix << std::endl;
+  rotation2rpy(E_rotation_matrix);
+
+  // cal t
+  Eigen::Vector3d pose1(-206.11752291698429, -196.7775533712687, 0.0);
+  Eigen::Vector3d pose2(-122.28197590525846, -185.79892610874197, 0.0);
+  Eigen::Vector3d t = pose2 - pose1;
+  std::cout << "t  " << std::endl << t << std::endl;
+
+  // cal T
+  Eigen::Matrix4d T_Q = Eigen::Matrix4d::Identity();
+  Eigen::Matrix4d T_E = Eigen::Matrix4d::Identity();
+
+  T_Q.block<3, 3>(0, 0) = Q_rotation_matrix;
+  T_Q.block<3, 1>(0, 3) = t;
+
+  T_E.block<3, 3>(0, 0) = E_rotation_matrix;
+  T_E.block<3, 1>(0, 3) = t;
+
+  // load pcd
+  std::string pcd_name1 =
+      "/media/pw/data/cjy_data/09271017/rs_pcd/RS128_1695780589_044048128.pcd";
+  std::string pcd_name2 =
+      "/media/pw/data/cjy_data/09271017/rs_pcd/RS128_1695780629_944593152.pcd";
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr pcd1(
+      new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_name1, *pcd1);
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr pcd2(
+      new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_name2, *pcd2);
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr pcd2_trans_Q(
+      new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_name2, *pcd2_trans_Q);
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr pcd2_trans_E(
+      new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_name2, *pcd2_trans_E);
+
+  pcl::transformPointCloud(*pcd2, *pcd2_trans_Q, T_Q);
+  pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/pcd2_trans_Q.pcd",
+                            *pcd2_trans_Q);
+
+  pcl::transformPointCloud(*pcd2, *pcd2_trans_E, T_E);
+  pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/pcd2_trans_E.pcd",
+                            *pcd2_trans_E);
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr add_pcd(
+      new pcl::PointCloud<pcl::PointXYZI>);
+
+  *add_pcd += *pcd1;
+  *add_pcd += *pcd2_trans_Q;
+  pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/add_pcd.pcd", *add_pcd);
+
+  // result： Q is better
+
+  return;
+}
+
 void get_fixed() {
   fixed_pose = matched_PoseQue.front();
   std::cout << "fixed pose time:     " << fixed_pose.dr_time_sec << "." << fixed_pose.dr_time_nsec << std::endl;
@@ -360,7 +412,7 @@ void trans_L2f() {
       new pcl::PointCloud<pcl::PointXYZI>);
 
   double dis_thred = 0.2; // 相邻两帧点云间隔距离
-  double trans_thred = 5; // 收尾两帧点云间隔距离
+  double trans_thred = 2; // 收尾两帧点云间隔距离
 
   Eigen::Matrix4d trans_fTn = Eigen::Matrix4d::Identity();  // 当前帧-->fixed 增量式
   Eigen::Matrix4d trans_lTn = Eigen::Matrix4d::Identity();  // 当前帧-->上一帧
@@ -394,14 +446,11 @@ void trans_L2f() {
 
     pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud,
                              trans_fTn);  // pre --tran--> aft
-
-    std::cout << PclQue[i].pcd_name << std::endl;
-
-    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/dr/10193954/res/transed" + PclQue[i].pcd_name, *aft_trans_cloud);
+    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/09271017/res/transed" + PclQue[i].pcd_name, *aft_trans_cloud);
 
     std::cout << "------------transed cloud------------" << std::endl;
-    // pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/after_trans.pcd" + i,
-    // *aft_trans_cloud); std::cout << "saved transed cloud" << std::endl;
+    /* pcl::io::savePCDFileASCII("/home/pw/Desktop/pcdpcd/after_trans.pcd" + i,
+    *aft_trans_cloud); std::cout << "saved transed cloud" << std::endl;*/
 
     *add_pcd += *aft_trans_cloud;
     add_num++;
@@ -412,10 +461,10 @@ void trans_L2f() {
     }
   }
   std::cout << "------------start save final pcd------------" << std::endl;
-  pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/dr/10193954/res/add_pcd.pcd", *add_pcd);
+  pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/09271017/res/add_pcd.pcd", *add_pcd);
 }
 
-void trans_pcd_L_T_I(Eigen::Matrix4f L_T_I_) {
+void trans_pcd_L_T_I(Eigen::Matrix4f I_T_L_) {
   std::cout << PclQue.size() << std::endl;
   while(!PclQue.empty()) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr pre_trans_cloud(
@@ -424,73 +473,33 @@ void trans_pcd_L_T_I(Eigen::Matrix4f L_T_I_) {
       new pcl::PointCloud<pcl::PointXYZI>);
 
     pcl::io::loadPCDFile<pcl::PointXYZI>(PclQue.front().pcd_path, *pre_trans_cloud);
-    pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud, L_T_I_);  // pre --tran--> aft
+    pcl::transformPointCloud(*pre_trans_cloud, *aft_trans_cloud,
+                             I_T_L_.inverse());  // pre --tran--> aft
     std::cout << PclQue.front().pcd_name << std::endl;
-    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/lio/1009/subpcd/output_pcd/aft" + PclQue.front().pcd_name, *aft_trans_cloud);
+    pcl::io::savePCDFileASCII("/media/pw/data1/cjy_data/lio/1130/output/output_pcd/aft" + PclQue.front().pcd_name, *aft_trans_cloud);
     std::cout << "finish         " << std::endl;
     PclQue.pop_front();
 
   }
   
-  return;
-}
-
-void cal_T_rpy() {
-  Eigen::Matrix3d old_extrin;
-  old_extrin << -0.0031189598549765194, -0.99998180471893194, -0.0051635569610389634,  
-                -0.073016140628518703, 0.0053775315812755698, -0.99731626145461383,
-                0.99732588219555351,  -0.0027335663809816197, -0.073031584384438394;
-  std::cout << "old_extrin" << std::endl;
-  rotation2rpy(old_extrin);
-
-  Eigen::Matrix3d t_1_extrin;
-  t_1_extrin << -0.0038777428235728831, -0.99992504301525387, -0.011613417306567404,  
-                -0.073007157572826789, 0.011865598569986322, -0.99726082972997143,
-                0.99732387821295565,  -0.0030192584384561762, -0.073047696916132429;
-  std::cout << "t_1_extrin" << std::endl;
-  rotation2rpy(t_1_extrin);
-
-  Eigen::Matrix3d t_2_extrin;
-  t_2_extrin << -0.0045068694437556643, -0.99997649872838668, -0.0051662480324685409,  
-                -0.072377905622873093, 0.0054789471972761664, -0.99736223104509769,
-                0.99736709736458784,  -0.0041210591509347663, -0.072400897549761659;
-  std::cout << "t_2_extrin" << std::endl;  
-  rotation2rpy(t_2_extrin);
-
-  Eigen::Matrix3d t_3_extrin;
-  t_3_extrin << -0.0023537909675873984, -0.9999796814822649, -0.0059242122436430136,  
-                -0.071758230084385921, 0.0060778576139409266, -0.99740353722150998,
-                0.99741927797854213,  -0.0019225684517036401, -0.071771078069869362;
-  std::cout << "t_3_extrin" << std::endl;
-  rotation2rpy(t_3_extrin);
   
   return;
 }
 
 int main(int argc, char **argv) {
-  std::string dr_path = "/media/pw/data1/cjy_data/dr/10193954/dr_json";
-  std::string pcd_path = "/media/pw/data1/cjy_data/dr/10193954/rs_pcd";
-  std::string imu_path = "/media/pw/data1/cjy_data/dr/10193954/rs_pcd";
-  std::string wheel_path = "/media/pw/data1/cjy_data/dr/10193954/rs_pcd";
+  std::string dr_path = "/media/pw/data1/cjy_data/09271017/dr_json";
+  std::string pcd_path = "/media/pw/data1/cjy_data/09271017/filtered_pcd";
 
   // std::string dr_path = "/home/pw/cjy_home/data/drpose";
   // std::string pcd_path = "/home/pw/cjy_home/data/pcd";
   getdata::get_files g_files;
-  // g_files.setfilepath(dr_path, pcd_path);
-  g_files.setfilepath(dr_path, pcd_path, imu_path, wheel_path);
+  g_files.setfilepath(dr_path, pcd_path);
   g_files.readDRJsonPaths(DRJsonQue);
   g_files.readPCDPaths(PCDQue);
-  g_files.readIMUPaths(IMUJsonQue);
-  g_files.readWHEELPaths(WHEELJsonQue);
-
-  cal_T_rpy();
-  
   std::cout << "------------all files readed------------" << std::endl;
 
   getdata::get_DR g_dr;
   getdata::get_PCD g_pcd;
-  getdata::get_IMU g_imu;
-  getdata::get_WHEEL g_wheel;
 
   // std::cout << "DRJsonQue.empty       "  << DRJsonQue.empty() << std::endl;
   while (!DRJsonQue.empty()) {
@@ -512,61 +521,39 @@ int main(int argc, char **argv) {
     }
   }
 
-  while (!IMUJsonQue.empty()) {
-    getdata::get_IMU::ImuData one_imu;
-    one_imu = g_imu.readOneImuFromJson(IMUJsonQue);
-    ImuQue.push_back(one_imu);
-    if (one_imu.one_imu_readed) {
-      IMUJsonQue.pop_front();
-    }
-  }
-
-  while (!WHEELJsonQue.empty()) {
-    getdata::get_WHEEL::WheelData one_wheel;
-    one_wheel = g_wheel.readOneWheelFromJson(WHEELJsonQue);
-    WheelQue.push_back(one_wheel);
-    if (one_wheel.one_wheel_readed) {
-      WHEELJsonQue.pop_front();
-    }
-  }
-
-
   first_time_match(g_dr, g_pcd);
   last_time_match(g_dr, g_pcd);
   std::cout << "PclQue.size()            " << PclQue.size() << std::endl;
   std::cout << "matched_PoseQue.size()   " << matched_PoseQue.size() << std::endl;
   match_files();
   if(save_que_to_file()) {
-    // undistor();
-    // get_fixed();
-    // trans_L2f();
+  // test_calcu_R();
+  get_fixed();
+  trans_L2f();
   }
 
-  // ---------------------------------after lio  IMU --> Lidar
-
-  // std::string dr_path = "/media/pw/data1/cjy_data/dr/10193954/dr_json";
-  // std::string pcd_path = "/media/pw/data1/cjy_data/lio/1009/subpcd";
-  // getdata::get_files g_files;
-  // g_files.setfilepath(dr_path, pcd_path);
-  // g_files.readPCDPaths(PCDQue);
+  std::string pcd_path = "/media/pw/data1/cjy_data/lio/1130/output/output_pcd";
+  getdata::get_files g_files;
+  g_files.setfilepath(dr_path, pcd_path);
+  g_files.readPCDPaths(PCDQue);
   
-  // getdata::get_PCD g_pcd;
-  // while (!PCDQue.empty()) {
-  //   getdata::get_PCD::PcdData one_pcd;
-  //   one_pcd = g_pcd.readOnePcd(PCDQue);
-  //   PclQue.push_back(one_pcd);
-  //   if (one_pcd.one_pcd_readed) {
-  //     PCDQue.pop_front();
-  //   }
-  // }
+  getdata::get_PCD g_pcd;
+  while (!PCDQue.empty()) {
+    getdata::get_PCD::PcdData one_pcd;
+    one_pcd = g_pcd.readOnePcd(PCDQue);
+    PclQue.push_back(one_pcd);
+    if (one_pcd.one_pcd_readed) {
+      PCDQue.pop_front();
+    }
+  }
 
-  // Eigen::Matrix4f L_T_I = Eigen::Matrix4f::Identity();
-  // L_T_I <<1, 0, 0, -1.810,
-  //         0, 1, 0, 0,
-  //         0, 0, 1, -0.043,
-  //         0, 0, 0, 1;
+  Eigen::Matrix4f I_T_L = Eigen::Matrix4f::Identity();
+  I_T_L <<1, 0, 0, -1.810,
+          0, 1, 0, 0,
+          0, 0, 1, -0.043,
+          0, 0, 0, 1;
 
-  // trans_pcd_L_T_I(L_T_I);
+  trans_pcd_L_T_I(I_T_L);
   
   
   
